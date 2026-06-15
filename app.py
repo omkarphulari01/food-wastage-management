@@ -25,6 +25,12 @@ import streamlit as st
 
 from queries import QUERIES
 
+try:
+    import charts
+    HAS_PLOTLY = charts.HAS_PLOTLY
+except Exception:
+    HAS_PLOTLY = False
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "food.db")
 
 st.set_page_config(
@@ -32,6 +38,112 @@ st.set_page_config(
     page_icon="🍲",
     layout="wide",
 )
+
+# --------------------------------------------------------------- global styling
+st.markdown(
+    """
+    <style>
+      .block-container { padding-top: 2.2rem; padding-bottom: 3rem; }
+      h1, h2, h3 { color: #0F172A; font-weight: 700; }
+
+      /* hero header */
+      .hero {
+        background: linear-gradient(110deg, #065F46 0%, #10B981 55%, #34D399 100%);
+        border-radius: 18px; padding: 26px 30px; margin-bottom: 22px;
+        color: #ECFDF5; box-shadow: 0 10px 30px rgba(16,185,129,0.25);
+      }
+      .hero h1 { color: #FFFFFF; margin: 0; font-size: 1.9rem; }
+      .hero p  { color: #D1FAE5; margin: 6px 0 0; font-size: 0.98rem; }
+
+      /* KPI cards */
+      .kpi {
+        background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 16px;
+        padding: 18px 18px 16px; box-shadow: 0 4px 14px rgba(15,23,42,0.05);
+        height: 100%;
+      }
+      .kpi .lab { color: #64748B; font-size: 0.82rem; font-weight: 600;
+                  text-transform: uppercase; letter-spacing: .04em; }
+      .kpi .val { color: #0F172A; font-size: 1.7rem; font-weight: 800; margin-top: 4px; }
+      .kpi .ico { width: 40px; height: 40px; border-radius: 11px; display: flex;
+                  align-items: center; justify-content: center; font-size: 20px;
+                  margin-bottom: 10px; }
+
+      /* section divider tweak */
+      hr { margin: 1.4rem 0; }
+
+      /* dataframe corners */
+      [data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+
+      /* sidebar */
+      section[data-testid="stSidebar"] { background: #0F172A; }
+      section[data-testid="stSidebar"] * { color: #E2E8F0 !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def kpi_card(col, label, value, icon, color):
+    col.markdown(
+        f"""
+        <div class="kpi" style="border-top:4px solid {color}">
+          <div class="ico" style="background:{color}1A;color:{color}">{icon}</div>
+          <div class="lab">{label}</div>
+          <div class="val">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---- safe chart wrappers (fall back to native charts if Plotly unavailable) ----
+_PCFG = {"displayModeBar": False}
+
+
+def viz_bar(series, title, **kw):
+    if HAS_PLOTLY:
+        try:
+            st.plotly_chart(charts.bar(series, title, **kw), width="stretch", config=_PCFG)
+            return
+        except Exception:
+            pass
+    st.caption(title)
+    st.bar_chart(series)
+
+
+def viz_donut(series, title, color_map=None, height=360):
+    if HAS_PLOTLY:
+        try:
+            st.plotly_chart(charts.donut(series, title, color_map=color_map, height=height),
+                            width="stretch", config=_PCFG)
+            return
+        except Exception:
+            pass
+    st.caption(title)
+    st.bar_chart(series)
+
+
+def viz_grouped(pivot, title, **kw):
+    if HAS_PLOTLY:
+        try:
+            st.plotly_chart(charts.grouped_bar(pivot, title, **kw), width="stretch", config=_PCFG)
+            return
+        except Exception:
+            pass
+    st.caption(title)
+    st.bar_chart(pivot)
+
+
+def viz_area(series, title, color="#3B82F6", height=340):
+    if HAS_PLOTLY:
+        try:
+            st.plotly_chart(charts.area(series, title, color=color, height=height),
+                            width="stretch", config=_PCFG)
+            return
+        except Exception:
+            pass
+    st.caption(title)
+    st.line_chart(series)
 
 
 # --------------------------------------------------------------------------- db
@@ -78,8 +190,15 @@ def distinct(col, tbl):
 
 # ------------------------------------------------------------------------ pages
 def page_dashboard():
-    st.title("🍲 Local Food Wastage Management System")
-    st.caption("Connecting surplus food providers with people in need.")
+    st.markdown(
+        """
+        <div class="hero">
+          <h1>🍲 Local Food Wastage Management System</h1>
+          <p>Connecting surplus food providers with the people and organisations who need it.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     providers = table("providers")
     receivers = table("receivers")
@@ -87,28 +206,24 @@ def page_dashboard():
     claims = table("claims")
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Providers", len(providers))
-    c2.metric("Receivers", len(receivers))
-    c3.metric("Food Listings", len(food))
-    c4.metric("Total Quantity", int(food["Quantity"].sum()) if len(food) else 0)
-    c5.metric("Claims", len(claims))
+    kpi_card(c1, "Providers", f"{len(providers):,}", "🏪", "#10B981")
+    kpi_card(c2, "Receivers", f"{len(receivers):,}", "🤝", "#3B82F6")
+    kpi_card(c3, "Food Listings", f"{len(food):,}", "🍱", "#F59E0B")
+    kpi_card(c4, "Total Quantity", f"{int(food['Quantity'].sum()) if len(food) else 0:,}", "📦", "#8B5CF6")
+    kpi_card(c5, "Claims", f"{len(claims):,}", "📋", "#EC4899")
 
+    st.write("")
     st.divider()
     left, right = st.columns(2)
-
     with left:
-        st.subheader("Claims by status")
-        status = claims["Status"].value_counts()
-        st.bar_chart(status)
-
+        viz_donut(claims["Status"].value_counts(), "Claims by Status",
+                  color_map=charts.STATUS_COLORS if HAS_PLOTLY else None)
     with right:
-        st.subheader("Listings by food type")
-        ftype = food["Food_Type"].value_counts()
-        st.bar_chart(ftype)
+        viz_donut(food["Food_Type"].value_counts(), "Listings by Food Type",
+                  color_map=charts.FOOD_COLORS if HAS_PLOTLY else None)
 
-    st.subheader("Top 10 cities by food listings")
-    by_city = food["Location"].value_counts().head(10)
-    st.bar_chart(by_city)
+    viz_bar(food["Location"].value_counts().head(10), "Top 10 Cities by Food Listings",
+            y_title="Listings")
 
 
 def page_browse():
@@ -286,7 +401,8 @@ def page_queries():
         st.dataframe(df, width="stretch", hide_index=True)
         # auto-chart when it makes sense
         if df.shape[1] == 2 and pd.api.types.is_numeric_dtype(df.iloc[:, 1]):
-            st.bar_chart(df.set_index(df.columns[0]))
+            s = df.set_index(df.columns[0]).iloc[:, 0]
+            viz_bar(s.head(15), "", y_title=str(df.columns[1]))
         with st.expander("Show SQL"):
             st.code(sql.strip(), language="sql")
         st.divider()
@@ -341,81 +457,76 @@ def page_eda():
     food = table("food_listings")
     claims = table("claims")
 
-    # listing + provider + meal context for the multivariate / claim charts
-    fp = food.merge(providers[["Provider_ID", "Name", "City"]],
-                    on="Provider_ID", how="left", suffixes=("", "_prov"))
+    # listing + provider + receiver context for the multivariate / claim charts
     cf = claims.merge(food, on="Food_ID", how="left")
-    cf = cf.merge(receivers[["Receiver_ID", "Name"]].rename(columns={"Name": "Receiver_Name"}),
-                  on="Receiver_ID", how="left")
+    cf = cf.merge(providers[["Provider_ID", "Name"]], on="Provider_ID", how="left")
+    cf = cf.merge(
+        receivers[["Receiver_ID", "Name"]].rename(columns={"Name": "Receiver_Name"}),
+        on="Receiver_ID", how="left",
+    )
 
     # ---------------------------------------------------------- Univariate (1-4)
     st.header("Univariate")
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("1. Provider Type Distribution")
-        st.bar_chart(providers["Type"].value_counts())
+        viz_donut(providers["Type"].value_counts(), "1. Provider Type Distribution")
     with c2:
-        st.subheader("2. Receiver Type Distribution")
-        st.bar_chart(receivers["Type"].value_counts())
+        viz_donut(receivers["Type"].value_counts(), "2. Receiver Type Distribution")
     c3, c4 = st.columns(2)
     with c3:
-        st.subheader("3. Food Type Distribution")
-        st.bar_chart(food["Food_Type"].value_counts())
+        viz_donut(food["Food_Type"].value_counts(), "3. Food Type Distribution",
+                  color_map=charts.FOOD_COLORS if HAS_PLOTLY else None)
     with c4:
-        st.subheader("4. Meal Type Distribution")
-        st.bar_chart(food["Meal_Type"].value_counts())
+        viz_donut(food["Meal_Type"].value_counts(), "4. Meal Type Distribution",
+                  color_map=charts.MEAL_COLORS if HAS_PLOTLY else None)
 
     # ---------------------------------------------------------- Bivariate (5-8)
     st.header("Bivariate")
-    st.subheader("5. City vs Food Listings (top 15)")
-    st.bar_chart(food["Location"].value_counts().head(15))
-    st.subheader("6. Provider Type vs Quantity")
-    st.bar_chart(food.groupby("Provider_Type")["Quantity"].sum())
+    viz_bar(food["Location"].value_counts().head(15), "5. City vs Food Listings (Top 15)",
+            y_title="Listings")
+    viz_bar(food.groupby("Provider_Type")["Quantity"].sum(), "6. Provider Type vs Quantity",
+            y_title="Quantity")
     c5, c6 = st.columns(2)
     with c5:
-        st.subheader("7. Food Type vs Quantity")
-        st.bar_chart(food.groupby("Food_Type")["Quantity"].sum())
+        viz_bar(food.groupby("Food_Type")["Quantity"].sum(), "7. Food Type vs Quantity",
+                color_map=charts.FOOD_COLORS if HAS_PLOTLY else None, y_title="Quantity")
     with c6:
-        st.subheader("8. Meal Type vs Quantity")
-        st.bar_chart(food.groupby("Meal_Type")["Quantity"].sum())
+        viz_bar(food.groupby("Meal_Type")["Quantity"].sum(), "8. Meal Type vs Quantity",
+                color_map=charts.MEAL_COLORS if HAS_PLOTLY else None, y_title="Quantity")
 
     # -------------------------------------------------------- Multivariate (9-12)
     st.header("Multivariate")
-    st.subheader("9. City + Provider Type + Quantity (top 10 cities)")
     top_cities = food["Location"].value_counts().head(10).index
     pivot = (food[food["Location"].isin(top_cities)]
              .pivot_table(index="Location", columns="Provider_Type",
                           values="Quantity", aggfunc="sum", fill_value=0))
-    st.bar_chart(pivot)
+    viz_grouped(pivot, "9. City + Provider Type + Quantity (Top 10 Cities)", y_title="Quantity")
 
-    st.subheader("10. Food Type + Meal Type + Quantity")
     pivot2 = food.pivot_table(index="Meal_Type", columns="Food_Type",
                               values="Quantity", aggfunc="sum", fill_value=0)
-    st.bar_chart(pivot2)
+    viz_grouped(pivot2, "10. Food Type + Meal Type + Quantity", y_title="Quantity")
 
-    st.subheader("11. Provider + Claims + Quantity (top 10 providers by claims)")
     prov_claims = (cf.groupby("Name")
-                   .agg(claims=("Claim_ID", "count"), quantity=("Quantity", "sum"))
-                   .sort_values("claims", ascending=False).head(10))
-    st.bar_chart(prov_claims)
+                   .agg(Claims=("Claim_ID", "count"), Quantity=("Quantity", "sum"))
+                   .sort_values("Claims", ascending=False).head(10))
+    viz_grouped(prov_claims, "11. Provider + Claims + Quantity (Top 10 Providers)")
 
-    st.subheader("12. Receiver + Claims + Quantity (top 10 receivers by claims)")
     rec_claims = (cf.groupby("Receiver_Name")
-                  .agg(claims=("Claim_ID", "count"), quantity=("Quantity", "sum"))
-                  .sort_values("claims", ascending=False).head(10))
-    st.bar_chart(rec_claims)
+                  .agg(Claims=("Claim_ID", "count"), Quantity=("Quantity", "sum"))
+                  .sort_values("Claims", ascending=False).head(10))
+    viz_grouped(rec_claims, "12. Receiver + Claims + Quantity (Top 10 Receivers)")
 
     # ------------------------------------------------------ Claim Analysis (13-15)
     st.header("Claim Analysis")
-    st.subheader("13. Claim Status Distribution")
-    st.bar_chart(claims["Status"].value_counts())
+    viz_donut(claims["Status"].value_counts(), "13. Claim Status Distribution",
+              color_map=charts.STATUS_COLORS if HAS_PLOTLY else None)
     c7, c8 = st.columns(2)
     with c7:
-        st.subheader("14. Top 10 Receivers")
-        st.bar_chart(cf["Receiver_Name"].value_counts().head(10))
+        viz_bar(cf["Receiver_Name"].value_counts().head(10), "14. Top 10 Receivers",
+                horizontal=True, height=420)
     with c8:
-        st.subheader("15. Top 10 Providers")
-        st.bar_chart(cf["Name"].value_counts().head(10))
+        viz_bar(cf["Name"].value_counts().head(10), "15. Top 10 Providers",
+                horizontal=True, height=420)
 
 
 def page_insights():
@@ -450,15 +561,37 @@ def page_insights():
     demand_city = cf["Location"].value_counts().idxmax()
 
     rows = [
-        ("Food Availability", f"**{top_city_food}** has the most food listings ({top_city_food_n})."),
-        ("Food Waste", f"**{most_wasted_meal}** is the most cancelled (wasted) meal type."),
-        ("Provider Analysis", f"**{top_provider}** contributes the most food overall."),
-        ("Receiver Analysis", f"**{top_receiver}** claims the most food."),
-        ("Claims Analysis", f"**{completed_pct}%** of all claims are completed."),
-        ("Demand Analysis", f"**{demand_city}** has the highest food demand (most claims)."),
+        ("🏙️ Food Availability", f"**{top_city_food}** has the most food listings ({top_city_food_n})."),
+        ("🗑️ Food Waste", f"**{most_wasted_meal}** is the most cancelled (wasted) meal type."),
+        ("🏪 Provider Analysis", f"**{top_provider}** contributes the most food overall."),
+        ("🤝 Receiver Analysis", f"**{top_receiver}** claims the most food."),
+        ("✅ Claims Analysis", f"**{completed_pct}%** of all claims are completed."),
+        ("📈 Demand Analysis", f"**{demand_city}** has the highest food demand (most claims)."),
     ]
-    for label, text in rows:
-        st.markdown(f"- **{label}:** {text}")
+    cols = st.columns(2)
+    accent = ["#10B981", "#EF4444", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"]
+    for i, (label, text) in enumerate(rows):
+        with cols[i % 2]:
+            st.markdown(
+                f"""
+                <div class="kpi" style="border-left:5px solid {accent[i]};
+                     border-top:none; margin-bottom:14px">
+                  <div class="lab" style="color:{accent[i]}">{label}</div>
+                  <div style="color:#0F172A;font-size:0.98rem;margin-top:6px">{text}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+    st.subheader("Supporting charts")
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        viz_donut(claims["Status"].value_counts(), "Claim Status Split",
+                  color_map=charts.STATUS_COLORS if HAS_PLOTLY else None)
+    with cc2:
+        viz_bar(cf["Location"].value_counts().head(10), "Top 10 Cities by Demand (Claims)",
+                horizontal=True, height=400)
 
     st.divider()
     st.header("Recommendations")
