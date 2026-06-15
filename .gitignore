@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Streamlit / local DB (rebuilt automatically from the CSVs in ./data)
+food.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
